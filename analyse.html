@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Commencer mon analyse patrimoniale — Lioncrest Capital</title>
+<link rel="icon" href="assets/img/logo-icon.png">
+<link rel="stylesheet" href="assets/css/style.css">
+<link rel="stylesheet" href="assets/css/wizard.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="container nav-row">
+    <a href="index.html" class="brand">
+      <img src="assets/img/logo-icon.png" alt="Lioncrest Capital" class="brand-mark">
+      <span>
+        <span class="brand-word">Lioncrest Capital</span>
+        <span class="brand-sub">Gestion de patrimoine</span>
+      </span>
+    </a>
+    <nav class="nav-links" id="navLinks">
+      <a href="index.html">Accueil</a>
+      <a href="qui-sommes-nous.html">Qui sommes-nous</a>
+      <a href="analyse.html" class="active">Commencer mon analyse</a>
+      <a href="contact.html">Contact</a>
+    </nav>
+    <div class="nav-actions">
+      <button class="nav-toggle" id="navToggle" aria-expanded="false" aria-label="Ouvrir le menu">Menu</button>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<!-- ============ INTRO ============ -->
+<section id="intro" class="intro-hero">
+  <div class="container-narrow">
+    <div class="eyebrow on-dark">Analyse patrimoniale</div>
+    <h1>Votre premier entretien avec un conseiller privé.</h1>
+    <p class="hero-lead" style="margin:0 auto 20px;">Ce questionnaire reprend, étape par étape, les éléments qu'un conseiller LIONCREST Capital aborderait lors d'un premier rendez-vous : votre situation civile, vos revenus, votre patrimoine et vos objectifs.</p>
+
+    <div class="intro-benefits">
+      <div class="intro-benefit">
+        <span class="ib-num">01</span>
+        <h3>Un diagnostic sur mesure</h3>
+        <p>Votre situation civile, professionnelle et patrimoniale analysée dans sa globalité — pas un formulaire générique.</p>
+      </div>
+      <div class="intro-benefit">
+        <span class="ib-num">02</span>
+        <h3>Une confidentialité totale</h3>
+        <p>Vos informations ne servent qu'à préparer votre analyse. Elles ne sont jamais partagées ni revendues.</p>
+      </div>
+      <div class="intro-benefit">
+        <span class="ib-num">03</span>
+        <h3>Un conseiller, pas un algorithme</h3>
+        <p>À l'issue, un conseiller LIONCREST Capital vous contacte pour un échange réellement personnalisé.</p>
+      </div>
+    </div>
+
+    <button id="btnStart" class="btn btn-gold btn-lg" style="margin-top:44px;">Commencer mon analyse patrimoniale</button>
+    <p class="intro-sub">15 minutes environ · sans engagement</p>
+  </div>
+</section>
+
+<!-- ============ WIZARD ============ -->
+<section id="wizard" class="wizard-section" hidden>
+  <div class="container wizard-shell">
+
+    <div class="wizard-progress">
+      <div class="wizard-progress-bar"><div id="progressFill" class="wizard-progress-fill"></div></div>
+      <div class="wizard-progress-label">
+        <span id="progressStepLabel">Étape 1 / 9</span>
+        <span id="progressStepTitle"></span>
+      </div>
+    </div>
+
+    <form id="wizardForm" novalidate>
+      <div id="stepContainer" class="step-panel"></div>
+
+      <div class="wizard-nav">
+        <button type="button" id="btnPrev" class="btn btn-ghost">← Précédent</button>
+        <span id="stepError" class="step-error" role="alert"></span>
+        <button type="button" id="btnNext" class="btn btn-gold">Suivant →</button>
+      </div>
+    </form>
+  </div>
+</section>
+
+<!-- ============ ECRAN DE FIN ============ -->
+<section id="finalScreen" class="wizard-section" hidden>
+  <div class="container" style="max-width:640px;text-align:center;">
+    <div class="final-mark">
+      <img src="assets/img/logo-icon.png" alt="">
+    </div>
+    <div class="eyebrow" style="justify-content:center;">Analyse transmise</div>
+    <h1 style="margin-top:16px;font-size:clamp(1.9rem,3.4vw,2.4rem);">Merci pour votre confiance.</h1>
+    <p style="font-size:1.05rem;max-width:44ch;margin:0 auto 8px;">Votre analyse patrimoniale est en cours de préparation.</p>
+    <p style="font-size:1.05rem;max-width:44ch;margin:0 auto 40px;">Un conseiller LIONCREST Capital reviendra vers vous afin d'organiser un rendez-vous personnalisé.</p>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;justify-content:center;">
+      <a href="contact.html" class="btn btn-gold btn-lg">Prendre rendez-vous</a>
+      <button id="btnDownloadPdf" class="btn btn-outline-dark btn-lg">Télécharger mon dossier (PDF)</button>
+    </div>
+    <p style="font-size:.8rem;color:var(--stone);margin-top:30px;">Une confirmation vous sera également adressée par e-mail.</p>
+  </div>
+</section>
+
+</main>
+
+<!-- ============ ZONE D'IMPRESSION (PDF) ============ -->
+<div id="printReport" class="print-only"></div>
+
+<script src="assets/js/vendor/html2canvas.min.js"></script>
+<script src="assets/js/vendor/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script src="assets/js/email-service.js"></script>
+<script src="assets/js/main.js"></script>
+<script src="assets/js/questionnaire.js"></script>
+</body>
+</html>

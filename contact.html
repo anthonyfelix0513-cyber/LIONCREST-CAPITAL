@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Contact — Lioncrest Capital</title>
+<link rel="icon" href="assets/img/logo-icon.png">
+<link rel="stylesheet" href="assets/css/style.css">
+<link rel="stylesheet" href="assets/css/wizard.css">
+<style>
+  .page-hero{
+    padding:180px 0 100px;
+    color:var(--white);text-align:center;
+  }
+  .page-hero .eyebrow{justify-content:center;}
+  .page-hero h1{color:var(--white);font-size:clamp(2.2rem,4vw,3.1rem);max-width:22ch;margin:16px auto 0;}
+
+  .contact-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:70px;align-items:start;}
+  @media (max-width:900px){.contact-grid{grid-template-columns:1fr;gap:50px;}}
+
+  .contact-form-panel{
+    background:var(--white);border:1px solid var(--line);padding:48px 44px;
+  }
+  @media (max-width:600px){ .contact-form-panel{padding:32px 24px;} }
+
+  .contact-info-card{
+    background:var(--emerald-900);color:var(--white);padding:44px 38px;
+  }
+  .contact-info-card h3{color:var(--white);font-size:1.15rem;margin-bottom:22px;}
+  .contact-row{display:flex;gap:16px;margin-bottom:22px;font-size:.9rem;color:rgba(255,255,255,.8);}
+  .contact-row strong{display:block;color:var(--white);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px;}
+  .contact-hours{margin-top:30px;padding-top:26px;border-top:1px solid rgba(255,255,255,.14);}
+  .contact-hours h4{color:var(--gold-400);font-size:.78rem;letter-spacing:.1em;text-transform:uppercase;font-family:var(--font-body);font-weight:400;margin-bottom:14px;}
+  .contact-hours .hrow{display:flex;justify-content:space-between;font-size:.86rem;color:rgba(255,255,255,.72);padding:5px 0;}
+
+  .rgpd-row{
+    display:flex;gap:12px;align-items:flex-start;
+    font-size:.82rem;color:var(--stone);margin:26px 0;
+  }
+  .rgpd-row input{margin-top:3px;}
+
+  .contact-success{
+    display:none;
+    text-align:center;padding:60px 20px;
+  }
+  .contact-success .tick{
+    width:64px;height:64px;border-radius:50%;background:var(--emerald-600);color:var(--white);
+    display:flex;align-items:center;justify-content:center;font-size:1.7rem;margin:0 auto 24px;
+  }
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="container nav-row">
+    <a href="index.html" class="brand">
+      <img src="assets/img/logo-icon.png" alt="Lioncrest Capital" class="brand-mark">
+      <span>
+        <span class="brand-word">Lioncrest Capital</span>
+        <span class="brand-sub">Gestion de patrimoine</span>
+      </span>
+    </a>
+    <nav class="nav-links" id="navLinks">
+      <a href="index.html">Accueil</a>
+      <a href="qui-sommes-nous.html">Qui sommes-nous</a>
+      <a href="analyse.html">Commencer mon analyse</a>
+      <a href="contact.html" class="active">Contact</a>
+    </nav>
+    <div class="nav-actions">
+      <a href="analyse.html" class="btn btn-gold" style="padding:13px 26px;">Commencer mon analyse</a>
+      <button class="nav-toggle" id="navToggle" aria-expanded="false" aria-label="Ouvrir le menu">Menu</button>
+    </div>
+  </div>
+</header>
+
+<section class="page-hero">
+  <div class="container-narrow">
+    <div class="eyebrow on-dark">Contact</div>
+    <h1>Échangeons sur votre situation patrimoniale.</h1>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <div class="contact-grid">
+
+      <div class="contact-form-panel reveal">
+        <div id="contactFormWrap">
+          <div class="eyebrow">Nous écrire</div>
+          <h2 style="margin-top:14px;">Un message, une question ?</h2>
+          <p style="margin-bottom:32px;">Notre équipe vous répond sous 24 à 48 heures ouvrées.</p>
+
+          <form id="contactForm">
+            <div class="field-grid">
+              <div class="field">
+                <label for="c_nom">Nom</label>
+                <input type="text" id="c_nom" required>
+              </div>
+              <div class="field">
+                <label for="c_prenom">Prénom</label>
+                <input type="text" id="c_prenom" required>
+              </div>
+              <div class="field">
+                <label for="c_email">E-mail</label>
+                <input type="email" id="c_email" required>
+              </div>
+              <div class="field">
+                <label for="c_tel">Téléphone</label>
+                <input type="text" id="c_tel">
+              </div>
+            </div>
+            <div class="field">
+              <label for="c_sujet">Sujet</label>
+              <select id="c_sujet" required>
+                <option value="" disabled selected>Sélectionner...</option>
+                <option value="analyse">Ma dernière analyse patrimoniale</option>
+                <option value="rdv">Demande de rendez-vous</option>
+                <option value="info">Demande d'information générale</option>
+                <option value="autre">Autre</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="c_message">Message</label>
+              <textarea id="c_message" rows="5" required style="width:100%;padding:13px 14px;border:1px solid var(--line);border-radius:2px;background:var(--offwhite);resize:vertical;"></textarea>
+            </div>
+
+            <label class="rgpd-row">
+              <input type="checkbox" id="c_rgpd" required>
+              <span>J'accepte que les informations saisies dans ce formulaire soient utilisées par Lioncrest Capital pour traiter ma demande, conformément à la politique de confidentialité du cabinet.</span>
+            </label>
+
+            <button type="submit" class="btn btn-primary btn-lg btn-block">Envoyer mon message</button>
+          </form>
+        </div>
+
+        <div id="contactSuccess" class="contact-success">
+          <div class="tick">✓</div>
+          <h3>Message bien reçu</h3>
+          <p>Merci. Un membre de l'équipe Lioncrest Capital reviendra vers vous sous 24 à 48 heures ouvrées.</p>
+        </div>
+      </div>
+
+      <div class="reveal reveal-delay-1">
+        <div class="contact-info-card">
+          <h3>Lioncrest Capital</h3>
+          <div class="contact-row"><div><strong>Adresse</strong>Paris, France</div></div>
+          <div class="contact-row"><div><strong>Téléphone</strong><a href="tel:+33651517183" style="color:inherit;">06 51 51 71 83</a></div></div>
+          <div class="contact-row"><div><strong>E-mail</strong><a href="mailto:anthony.felix@lioncrestcapital.com" style="color:inherit;">anthony.felix@lioncrestcapital.com</a></div></div>
+          <div class="contact-hours">
+            <h4>Horaires</h4>
+            <div class="hrow"><span>Lundi – Vendredi</span><span>9h00 – 18h30</span></div>
+            <div class="hrow"><span>Samedi</span><span>Sur rendez-vous</span></div>
+            <div class="hrow"><span>Dimanche</span><span>Fermé</span></div>
+          </div>
+        </div>
+        <p style="font-size:.82rem;color:var(--stone);margin-top:20px;">Pour une étude complète de votre situation, nous vous invitons à démarrer votre <a href="analyse.html" style="color:var(--emerald-700);">analyse patrimoniale</a> : elle nous permet de préparer un échange déjà informé.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div>
+        <a href="index.html" class="brand" style="margin-bottom:18px;">
+          <img src="assets/img/logo-icon.png" alt="Lioncrest Capital" class="brand-mark" style="width:36px;height:36px;">
+          <span class="brand-word" style="font-size:1.15rem;color:var(--white);">Lioncrest Capital</span>
+        </a>
+        <p style="font-size:.87rem;max-width:48ch;color:rgba(255,255,255,.55);">Cabinet indépendant de gestion de patrimoine. L'analyse en ligne ne constitue pas un conseil personnalisé au sens réglementaire et sera confirmée lors d'un rendez-vous avec le cabinet.</p>
+      </div>
+      <div>
+        <h4>Navigation</h4>
+        <ul>
+          <li><a href="index.html">Accueil</a></li>
+          <li><a href="qui-sommes-nous.html">Qui sommes-nous</a></li>
+          <li><a href="analyse.html">Commencer mon analyse</a></li>
+          <li><a href="contact.html">Contact</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Contact</h4>
+        <ul>
+          <li><a href="mailto:anthony.felix@lioncrestcapital.com">anthony.felix@lioncrestcapital.com</a></li>
+          <li><a href="tel:+33651517183">06 51 51 71 83</a></li>
+          <li><a href="#">Paris, France</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 Lioncrest Capital. Tous droits réservés.</span>
+      <span>Mentions légales · Politique de confidentialité · RGPD</span>
+    </div>
+  </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script src="assets/js/email-service.js"></script>
+<script src="assets/js/main.js"></script>
+<script>
+  document.getElementById('contactForm').addEventListener('submit', function(e){
+    e.preventDefault();
+
+    const form = e.target;
+    const btn = form.querySelector('button[type="submit"]');
+    const originalLabel = btn.textContent;
+    const sujetSelect = document.getElementById('c_sujet');
+    const sujetLabel = sujetSelect.options[sujetSelect.selectedIndex].text;
+    const nom = document.getElementById('c_nom').value;
+    const prenom = document.getElementById('c_prenom').value;
+    const email = document.getElementById('c_email').value;
+    const tel = document.getElementById('c_tel').value;
+    const message = document.getElementById('c_message').value;
+
+    btn.disabled = true;
+    btn.textContent = 'Envoi en cours...';
+
+    LioncrestMail.send({
+      subject: 'Nouveau message de contact — ' + sujetLabel,
+      from_name: `${prenom} ${nom}`.trim(),
+      reply_to: email,
+      message: `Nom : ${nom}\nPrénom : ${prenom}\nE-mail : ${email}\nTéléphone : ${tel || '—'}\nSujet : ${sujetLabel}\n\n${message}`,
+    }).then(function(){
+      document.getElementById('contactFormWrap').style.display = 'none';
+      document.getElementById('contactSuccess').style.display = 'block';
+    }).catch(function(err){
+      console.error("Erreur lors de l'envoi du message de contact :", err);
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+      alert("Une erreur est survenue lors de l'envoi de votre message. Merci de réessayer, ou de nous contacter directement par téléphone.");
+    });
+  });
+</script>
+</body>
+</html>

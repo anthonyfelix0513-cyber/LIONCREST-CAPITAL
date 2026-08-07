@@ -1,0 +1,988 @@
+/* ==========================================================================
+   LIONCREST CAPITAL — Moteur du parcours d'analyse patrimoniale (v2)
+   Organisation :
+     1. ETAT + SAUVEGARDE AUTOMATIQUE
+     2. CONFIGURATION DES ETAPES
+     3. MOTEUR DE RENDU GENERIQUE (champs standards + répétables génériques)
+     4. NAVIGATION / VALIDATION
+     5. ETAPE SPECIALE "PATRIMOINE FINANCIER" (supports fixes)
+     6. ECRAN DE FIN + EXPORT PDF (dossier client)
+   ========================================================================== */
+
+(function(){
+"use strict";
+
+const STORAGE_KEY = "lioncrest_analyse_v1";
+
+/* ==========================================================================
+   1. ETAT
+   ========================================================================== */
+function freshState(){
+  return {
+    // Etape 1 — état civil (personne A — celle qui remplit le formulaire)
+    nom:"", prenom:"", dateNaissance:"", lieuNaissance:"", nationalite:"",
+    profession:"", employeur:"", anciennete:"", typeContrat:"", regimeRetraite:"",
+    adresse:"", telephone:"", email:"",
+    situationFamiliale:"", regimeMatrimonial:"",
+    // Seconde personne (optionnelle) — mêmes champs, préfixés pb_ dans les formulaires
+    hasPersonneB:false,
+    personneB:{
+      nom:"", prenom:"", dateNaissance:"", lieuNaissance:"", nationalite:"",
+      profession:"", employeur:"", anciennete:"", typeContrat:"", regimeRetraite:"", telephone:"", email:"",
+      revenuSalaries:"", dividendes:"", revenusFonciers:"", bicBnc:"", autresRevenus:"",
+      chargesCredits:"", chargesImpots:"", chargesIfi:"", chargesCopro:"", trainDeVie:"",
+    },
+    // Etape 2 — revenus et charges (personne A)
+    revenuSalaries:"", dividendes:"", revenusFonciers:"", bicBnc:"", autresRevenus:"",
+    chargesCredits:"", chargesImpots:"", chargesIfi:"", chargesCopro:"", trainDeVie:"",
+    // Etape 3 — crédits (répétable)
+    credits:[],
+    // Etape 4 — immobilier (répétable)
+    biensImmo:[],
+    // Etape 5 — financier : supports fixes (banque + valeur + propriétaire) et comptes courants (répétable)
+    epargne:{
+      livretA:{banque:"",valeur:"",proprietaire:""}, ldds:{banque:"",valeur:"",proprietaire:""},
+      lep:{banque:"",valeur:"",proprietaire:""}, cat:{banque:"",valeur:"",proprietaire:""},
+      assuranceVie:{banque:"",valeur:"",proprietaire:""}, pea:{banque:"",valeur:"",proprietaire:""},
+      compteTitres:{banque:"",valeur:"",proprietaire:""},
+      per:{banque:"",valeur:"",proprietaire:""}, epargneSalariale:{banque:"",valeur:"",proprietaire:""},
+    },
+    comptesCourants:[],
+    // Etape 6 — actifs professionnels (répétable)
+    actifsPro:[],
+    // Etape 7 — prévoyance
+    prevoyanceContrats:[], prevoyanceDocuments:[],
+    // Etape 8 — objectifs
+    objectifs:[],
+    // Etape 9 — profil investisseur
+    appetence:"", horizon:"", experience:"",
+  };
+}
+let state = freshState();
+let idSeq = { credits:0, biensImmo:0, actifsPro:0, comptesCourants:0 };
+
+function saveState(){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({state, currentStep})); }catch(e){ /* stockage indisponible — on continue sans sauvegarde */ }
+}
+function loadSavedState(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw) return null;
+    return JSON.parse(raw);
+  }catch(e){ return null; }
+}
+function clearSavedState(){
+  try{ localStorage.removeItem(STORAGE_KEY); }catch(e){}
+}
+function recalcIdSeq(){
+  idSeq.credits = state.credits.reduce((m,c)=>Math.max(m, parseInt((c.id||"c0").slice(1))||0), 0);
+  idSeq.biensImmo = state.biensImmo.reduce((m,c)=>Math.max(m, parseInt((c.id||"b0").slice(1))||0), 0);
+  idSeq.actifsPro = state.actifsPro.reduce((m,c)=>Math.max(m, parseInt((c.id||"a0").slice(1))||0), 0);
+  idSeq.comptesCourants = state.comptesCourants.reduce((m,c)=>Math.max(m, parseInt((c.id||"cc0").slice(2))||0), 0);
+}
+
+/* --- Lecture / écriture unifiée : un champ "pb_xxx" cible state.personneB.xxx --- */
+function getFieldValue(id){
+  if(id.indexOf("pb_")===0) return state.personneB[id.slice(3)];
+  return state[id];
+}
+function setFieldValue(id, value){
+  if(id.indexOf("pb_")===0){ state.personneB[id.slice(3)] = value; }
+  else{ state[id] = value; }
+}
+/* --- Options de propriétaire, générées dynamiquement une fois la 2e personne ajoutée --- */
+function proprietaireOptions(){
+  const nomA = (state.prenom || "").trim() || "Personne A";
+  const nomB = (state.personneB.prenom || "").trim() || "Personne B";
+  return [
+    {v:"A", l:nomA},
+    {v:"B", l:nomB},
+    {v:"commun", l:"Bien / compte commun"},
+  ];
+}
+
+/* ==========================================================================
+   2. CONFIGURATION DES ETAPES
+   ========================================================================== */
+const SITUATION_OPTIONS = [
+  {v:"celibataire", l:"Célibataire"}, {v:"marie", l:"Marié(e)"}, {v:"pacse", l:"Pacsé(e)"},
+  {v:"divorce", l:"Divorcé(e)"}, {v:"veuf", l:"Veuf / veuve"}, {v:"concubinage", l:"Concubinage"},
+];
+const REGIME_OPTIONS = [
+  {v:"communaute_legale", l:"Communauté légale"}, {v:"separation_biens", l:"Séparation de biens"},
+  {v:"participation_acquets", l:"Participation aux acquêts"}, {v:"communaute_universelle", l:"Communauté universelle"},
+];
+const BANKS = [
+  {v:"bnp_paribas", l:"BNP Paribas"}, {v:"societe_generale", l:"Société Générale"},
+  {v:"credit_agricole", l:"Crédit Agricole"}, {v:"credit_mutuel", l:"Crédit Mutuel"},
+  {v:"lcl", l:"LCL"}, {v:"cic", l:"CIC"}, {v:"banque_populaire", l:"Banque Populaire"},
+  {v:"caisse_epargne", l:"Caisse d'Épargne"}, {v:"banque_postale", l:"La Banque Postale"},
+  {v:"hsbc", l:"HSBC Continental Europe"}, {v:"banque_palatine", l:"Banque Palatine"},
+  {v:"neuflize_obc", l:"Neuflize OBC"}, {v:"milleis", l:"Milleis Banque"}, {v:"barclays", l:"Barclays"},
+  {v:"boursorama", l:"Boursorama Banque"}, {v:"hello_bank", l:"Hello bank!"}, {v:"fortuneo", l:"Fortuneo"},
+  {v:"bforbank", l:"BforBank"}, {v:"ing", l:"ING France"}, {v:"monabanq", l:"Monabanq"},
+  {v:"revolut", l:"Revolut"}, {v:"n26", l:"N26"}, {v:"autre", l:"Autre banque"},
+];
+
+const STEPS = [
+  {
+    id:"etat-civil", title:"État civil et situation personnelle",
+    subtitle:"Ces informations nous permettent de vous situer précisément dans votre parcours de vie et professionnel.",
+    fields:[
+      {id:"nom", label:"Nom", type:"text", required:true},
+      {id:"prenom", label:"Prénom", type:"text", required:true},
+      {id:"dateNaissance", label:"Date de naissance", type:"date", required:true},
+      {id:"lieuNaissance", label:"Lieu de naissance", type:"text", required:false},
+      {id:"nationalite", label:"Nationalité", type:"text", required:false},
+      {id:"profession", label:"Profession", type:"text", required:true},
+      {id:"employeur", label:"Employeur", type:"text", required:false},
+      {id:"anciennete", label:"Ancienneté", type:"text", required:false, placeholder:"Ex. 6 ans"},
+      {id:"typeContrat", label:"Type de contrat", type:"select", required:false, options:[
+        {v:"cdi", l:"CDI"},{v:"cdd", l:"CDD"},{v:"tns", l:"TNS"},{v:"fonctionnaire", l:"Fonctionnaire"},{v:"autre", l:"Autre"},
+      ]},
+      {id:"regimeRetraite", label:"Régime de retraite", type:"text", required:false},
+      {id:"adresse", label:"Adresse", type:"text", required:false},
+      {id:"telephone", label:"Téléphone", type:"tel", required:true},
+      {id:"email", label:"E-mail", type:"email", required:true, help:"La confirmation de votre analyse y sera envoyée."},
+      {id:"situationFamiliale", label:"Situation familiale", type:"select", required:true, options:SITUATION_OPTIONS},
+      {id:"regimeMatrimonial", label:"Régime matrimonial", type:"select", required:true, condition:s=>s.situationFamiliale==="marie", options:REGIME_OPTIONS},
+    ]
+  },
+  {
+    id:"revenus-charges", title:"Revenus et charges",
+    subtitle:"Indiquez vos montants annuels. Laissez à 0 les rubriques qui ne vous concernent pas.",
+    groups:[
+      { title:"Revenus annuels", fields:[
+        {id:"revenuSalaries", label:"Revenus salariés (€)", type:"number", min:0},
+        {id:"dividendes", label:"Dividendes (€)", type:"number", min:0},
+        {id:"revenusFonciers", label:"Revenus fonciers (€)", type:"number", min:0},
+        {id:"bicBnc", label:"BIC / BNC (€)", type:"number", min:0},
+        {id:"autresRevenus", label:"Autres revenus (€)", type:"number", min:0},
+      ]},
+      { title:"Charges annuelles", fields:[
+        {id:"chargesCredits", label:"Crédits (€)", type:"number", min:0},
+        {id:"chargesImpots", label:"Impôts (€)", type:"number", min:0},
+        {id:"chargesIfi", label:"IFI (€)", type:"number", min:0},
+        {id:"chargesCopro", label:"Charges de copropriété (€)", type:"number", min:0},
+        {id:"trainDeVie", label:"Train de vie annuel (€)", type:"number", min:0},
+      ]},
+    ]
+  },
+  {
+    id:"credits", title:"Crédits en cours", repeaterKey:"credits", itemLabel:"Crédit",
+    subtitle:"Ajoutez chaque crédit en cours de remboursement.",
+    itemFields:[
+      {key:"type", label:"Type de crédit", type:"select", options:[
+        {v:"residence_principale", l:"Crédit résidence principale"},{v:"locatif", l:"Crédit locatif"},
+        {v:"auto", l:"Crédit automobile"},{v:"conso", l:"Crédit consommation"},{v:"autre", l:"Autre"},
+      ]},
+      {key:"banque", label:"Banque", type:"select", options:BANKS},
+      {key:"mensualite", label:"Mensualité (€)", type:"number", min:0},
+      {key:"capitalRestant", label:"Capital restant dû (€)", type:"number", min:0},
+      {key:"dateFin", label:"Date de fin", type:"date"},
+    ]
+  },
+  {
+    id:"immobilier", title:"Patrimoine immobilier", repeaterKey:"biensImmo", itemLabel:"Bien",
+    subtitle:"Ajoutez chaque bien détenu, seul, en indivision, en SCI ou en SCPI.",
+    itemFields:[
+      {key:"type", label:"Type de bien", type:"select", options:[
+        {v:"residence_principale", l:"Résidence principale"},{v:"residence_secondaire", l:"Résidence secondaire"},
+        {v:"appartement_locatif", l:"Appartement locatif"},{v:"maison_locative", l:"Maison locative"},
+        {v:"sci", l:"SCI"},{v:"scpi", l:"SCPI"},{v:"terrain", l:"Terrain"},{v:"parking", l:"Parking"},{v:"autre", l:"Autre"},
+      ]},
+      {key:"proprietaire", label:"Propriétaire", type:"select", condition:s=>s.hasPersonneB, options:proprietaireOptions, highlight:true},
+      {key:"adresse", label:"Adresse", type:"text"},
+      {key:"valeur", label:"Valeur estimée (€)", type:"number", min:0},
+      {key:"capitalRestant", label:"Capital restant dû (€)", type:"number", min:0},
+      {key:"revenusLocatifs", label:"Revenus locatifs annuels (€)", type:"number", min:0},
+      {key:"dpe", label:"DPE", type:"select", options:[
+        {v:"a", l:"A"},{v:"b", l:"B"},{v:"c", l:"C"},{v:"d", l:"D"},{v:"e", l:"E"},{v:"f", l:"F"},{v:"g", l:"G"},{v:"ns", l:"Non soumis / inconnu"},
+      ]},
+    ]
+  },
+  { id:"financier", title:"Patrimoine financier", subtitle:"Renseignez la valeur actuelle de chaque support détenu. Laissez à 0 si vous n'en détenez pas.", financier:true },
+  {
+    id:"actifs-pro", title:"Actifs professionnels", repeaterKey:"actifsPro", itemLabel:"Société",
+    subtitle:"Si vous détenez une ou plusieurs sociétés, ajoutez-les ici. Sinon, passez à l'étape suivante.",
+    itemFields:[
+      {key:"societe", label:"Nom de la société", type:"text"},
+      {key:"formeJuridique", label:"Forme juridique", type:"select", options:[
+        {v:"sas", l:"SAS / SASU"},{v:"sarl", l:"SARL / EURL"},{v:"sci", l:"SCI"},{v:"sa", l:"SA"},{v:"autre", l:"Autre"},
+      ]},
+      {key:"pourcentageDetention", label:"Pourcentage de détention (%)", type:"number", min:0},
+      {key:"valeurEstimee", label:"Valeur estimée (€)", type:"number", min:0},
+      {key:"chiffreAffaires", label:"Chiffre d'affaires (€)", type:"number", min:0},
+      {key:"tresorerie", label:"Trésorerie disponible (€)", type:"number", min:0},
+      {key:"projetCession", label:"Projet de cession", type:"select", options:[
+        {v:"oui", l:"Oui"},{v:"non", l:"Non"},{v:"a_etudier", l:"À étudier"},
+      ]},
+    ]
+  },
+  {
+    id:"prevoyance", title:"Prévoyance", subtitle:"Sélectionnez les contrats et documents dont vous disposez déjà.",
+    fields:[
+      {id:"prevoyanceContrats", label:"Contrats de prévoyance", type:"checkbox-group", options:[
+        {v:"deces", l:"Décès"},{v:"invalidite", l:"Invalidité"},{v:"homme_cle", l:"Homme clé"},{v:"mutuelle", l:"Mutuelle"},{v:"protection_conjoint", l:"Protection du conjoint"},
+      ]},
+      {id:"prevoyanceDocuments", label:"Documents juridiques existants", type:"checkbox-group", options:[
+        {v:"testament", l:"Testament"},{v:"mandat_protection_future", l:"Mandat de protection future"},
+        {v:"donation_dernier_vivant", l:"Donation au dernier vivant"},{v:"contrat_mariage", l:"Contrat de mariage"},
+      ]},
+    ]
+  },
+  {
+    id:"objectifs", title:"Objectifs patrimoniaux", subtitle:"Sélectionnez tout ce qui correspond à votre situation.",
+    fields:[
+      {id:"objectifs", label:"Vos objectifs", type:"checkbox-group", required:true, options:[
+        {v:"developper", l:"Développer mon patrimoine"},{v:"retraite", l:"Préparer ma retraite"},
+        {v:"reduire_fiscalite", l:"Réduire ma fiscalité"},{v:"acheter_immobilier", l:"Acheter un bien immobilier"},
+        {v:"transmettre", l:"Transmettre mon patrimoine"},{v:"proteger_conjoint", l:"Protéger mon conjoint"},
+        {v:"cession_entreprise", l:"Préparer une cession d'entreprise"},{v:"etudes_enfants", l:"Financer les études de mes enfants"},
+        {v:"epargne_securite", l:"Constituer une épargne de sécurité"},
+      ]},
+    ]
+  },
+  {
+    id:"profil-investisseur", title:"Profil investisseur", subtitle:"Ces éléments orientent le type de solutions adaptées à votre profil.",
+    fields:[
+      {id:"appetence", label:"Appétence au risque", type:"select", required:true, options:[
+        {v:"prudent", l:"Prudent"},{v:"modere", l:"Modéré"},{v:"equilibre", l:"Équilibré"},{v:"dynamique", l:"Dynamique"},{v:"offensif", l:"Offensif"},
+      ]},
+      {id:"horizon", label:"Horizon de placement", type:"select", required:true, options:[
+        {v:"court", l:"Moins de 3 ans"},{v:"moyen", l:"3 à 8 ans"},{v:"long", l:"Plus de 8 ans"},
+      ]},
+      {id:"experience", label:"Expérience en matière d'investissement", type:"select", required:true, options:[
+        {v:"debutant", l:"Débutant"},{v:"intermediaire", l:"Intermédiaire"},{v:"confirme", l:"Confirmé"},{v:"expert", l:"Expert"},
+      ]},
+    ]
+  },
+];
+
+/* ==========================================================================
+   3. MOTEUR DE RENDU
+   ========================================================================== */
+let currentStep = 0;
+
+const els = {
+  intro: document.getElementById("intro"),
+  wizard: document.getElementById("wizard"),
+  finalScreen: document.getElementById("finalScreen"),
+  stepContainer: document.getElementById("stepContainer"),
+  progressFill: document.getElementById("progressFill"),
+  progressStepLabel: document.getElementById("progressStepLabel"),
+  progressStepTitle: document.getElementById("progressStepTitle"),
+  btnPrev: document.getElementById("btnPrev"),
+  btnNext: document.getElementById("btnNext"),
+  stepError: document.getElementById("stepError"),
+  btnStart: document.getElementById("btnStart"),
+};
+
+function num(v){ if(v===undefined||v===null||v==="") return 0; const n=parseFloat(String(v).replace(/\s/g,"").replace(",",".")); return isNaN(n)?0:n; }
+function eur(n){ return new Intl.NumberFormat("fr-FR",{style:"currency",currency:"EUR",maximumFractionDigits:0}).format(n||0); }
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function labelOf(options, v){ const o=(options||[]).find(o=>o.v===v); return o?o.l:""; }
+
+function buildProgress(){
+  const step = STEPS[currentStep];
+  els.progressStepLabel.textContent = `Étape ${currentStep+1} / ${STEPS.length}`;
+  els.progressStepTitle.textContent = step.title;
+  els.progressFill.style.width = ((currentStep+1)/STEPS.length*100) + "%";
+}
+
+function renderField(f, getVal, onChange){
+  if(f.condition && !f.condition(state)) return "";
+  const val = getVal(f.id || f.key);
+  const name = f.id || f.key;
+  const opts = typeof f.options === "function" ? f.options() : f.options;
+  const highlightClass = f.highlight ? " field-highlight" : "";
+
+  if(f.type==="select"){
+    return `
+      <div class="field${highlightClass}" data-field="${name}">
+        <label for="f_${name}">${f.label}${f.required?' *':''}</label>
+        <select id="f_${name}" data-name="${name}" ${f.required?'required':''}>
+          <option value="" ${!val?'selected':''} disabled>Sélectionner...</option>
+          ${opts.map(o=>`<option value="${o.v}" ${val===o.v?'selected':''}>${esc(o.l)}</option>`).join("")}
+        </select>
+        ${f.help?`<div class="field-help">${esc(f.help)}</div>`:""}
+      </div>`;
+  }
+  if(f.type==="checkbox-group"){
+    const arr = Array.isArray(val) ? val : [];
+    return `
+      <div class="field" data-field="${name}">
+        <label>${f.label}${f.required?' *':''}</label>
+        <div class="option-grid">
+          ${f.options.map(o=>`
+            <label class="option-card">
+              <input type="checkbox" data-name="${name}" value="${o.v}" ${arr.includes(o.v)?'checked':''}>
+              <span class="box"><span class="dot"></span>${esc(o.l)}</span>
+            </label>`).join("")}
+        </div>
+      </div>`;
+  }
+  return `
+    <div class="field" data-field="${name}">
+      <label for="f_${name}">${f.label}${f.required?' *':''}</label>
+      <input type="${f.type}" id="f_${name}" data-name="${name}" value="${esc(val)}"
+        ${f.min!==undefined?`min="${f.min}"`:""} placeholder="${esc(f.placeholder||"")}" ${f.required?'required':''}>
+      ${f.help?`<div class="field-help">${esc(f.help)}</div>`:""}
+    </div>`;
+}
+
+const TYPE_CONTRAT_OPTIONS = [
+  {v:"cdi", l:"CDI"},{v:"cdd", l:"CDD"},{v:"tns", l:"TNS"},{v:"fonctionnaire", l:"Fonctionnaire"},{v:"autre", l:"Autre"},
+];
+
+const PERSONNE_B_IDENTITY_FIELDS = [
+  {id:"pb_nom", label:"Nom", type:"text", required:true, condition:s=>s.hasPersonneB},
+  {id:"pb_prenom", label:"Prénom", type:"text", required:true, condition:s=>s.hasPersonneB},
+  {id:"pb_dateNaissance", label:"Date de naissance", type:"date"},
+  {id:"pb_lieuNaissance", label:"Lieu de naissance", type:"text"},
+  {id:"pb_nationalite", label:"Nationalité", type:"text"},
+  {id:"pb_profession", label:"Profession", type:"text"},
+  {id:"pb_employeur", label:"Employeur", type:"text"},
+  {id:"pb_anciennete", label:"Ancienneté", type:"text", placeholder:"Ex. 6 ans"},
+  {id:"pb_typeContrat", label:"Type de contrat", type:"select", options:TYPE_CONTRAT_OPTIONS},
+  {id:"pb_regimeRetraite", label:"Régime de retraite", type:"text"},
+  {id:"pb_telephone", label:"Téléphone", type:"tel"},
+  {id:"pb_email", label:"E-mail", type:"email"},
+];
+const PERSONNE_B_REVENUS_GROUPS = [
+  { title:"Revenus annuels", fields:[
+    {id:"pb_revenuSalaries", label:"Revenus salariés (€)", type:"number", min:0},
+    {id:"pb_dividendes", label:"Dividendes (€)", type:"number", min:0},
+    {id:"pb_revenusFonciers", label:"Revenus fonciers (€)", type:"number", min:0},
+    {id:"pb_bicBnc", label:"BIC / BNC (€)", type:"number", min:0},
+    {id:"pb_autresRevenus", label:"Autres revenus (€)", type:"number", min:0},
+  ]},
+  { title:"Charges annuelles", fields:[
+    {id:"pb_chargesCredits", label:"Crédits (€)", type:"number", min:0},
+    {id:"pb_chargesImpots", label:"Impôts (€)", type:"number", min:0},
+    {id:"pb_chargesIfi", label:"IFI (€)", type:"number", min:0},
+    {id:"pb_chargesCopro", label:"Charges de copropriété (€)", type:"number", min:0},
+    {id:"pb_trainDeVie", label:"Train de vie annuel (€)", type:"number", min:0},
+  ]},
+];
+
+function renderPersonneBToggle(){
+  if(state.hasPersonneB){
+    return `
+      <div class="personne-b-banner">
+        <span>Une seconde personne est ajoutée à cette analyse.</span>
+        <button type="button" id="btnRemovePersonneB" class="btn-add-remove">Retirer cette personne</button>
+      </div>`;
+  }
+  return `
+    <button type="button" id="btnAddPersonneB" class="btn-add" style="margin-top:6px;">
+      <span class="plus">+</span> Ajouter une seconde personne à l'analyse (conjoint, associé...)
+    </button>`;
+}
+function renderPersonneBIdentityBlock(){
+  const getVal = getFieldValue;
+  return `
+    <div class="step-group-title">Seconde personne — état civil</div>
+    <div class="field-grid">${PERSONNE_B_IDENTITY_FIELDS.map(f=>renderField(f,getVal)).join("")}</div>`;
+}
+function renderPersonneBRevenusBlock(){
+  const getVal = getFieldValue;
+  return PERSONNE_B_REVENUS_GROUPS.map(g=>`
+    <div class="step-group-title">Seconde personne — ${esc(g.title)}</div>
+    <div class="field-grid">${g.fields.map(f=>renderField(f,getVal)).join("")}</div>
+  `).join("");
+}
+
+function renderStandardStep(step){
+  const getVal = getFieldValue;
+  let extra = "";
+  if(step.id==="etat-civil"){
+    extra = renderPersonneBToggle() + (state.hasPersonneB ? renderPersonneBIdentityBlock() : "");
+  }
+  if(step.id==="revenus-charges" && state.hasPersonneB){
+    extra = renderPersonneBRevenusBlock();
+  }
+  if(step.groups){
+    return `<h2 class="step-title">${esc(step.title)}</h2>
+      <p class="step-subtitle">${esc(step.subtitle)}</p>
+      ${step.groups.map(g=>`
+        <div class="step-group-title">${esc(g.title)}</div>
+        <div class="field-grid">${g.fields.map(f=>renderField(f,getVal)).join("")}</div>
+      `).join("")}
+      ${extra}`;
+  }
+  return `<h2 class="step-title">${esc(step.title)}</h2>
+    <p class="step-subtitle">${esc(step.subtitle)}</p>
+    <div class="field-grid">${step.fields.map(f=>renderField(f,getVal)).join("")}</div>
+    ${extra}`;
+}
+
+/* -------- Répétables génériques (crédits, immobilier, actifs pro) -------- */
+function repeaterCard(step, item, index){
+  const getVal = (key)=> item[key];
+  return `
+    <div class="repeat-card" data-item-id="${item.id}">
+      <div class="repeat-card-head">
+        <h4>${esc(step.itemLabel)} n°${index+1}</h4>
+        <button type="button" class="repeat-remove" data-remove="${item.id}">✕ Retirer</button>
+      </div>
+      <div class="field-grid">
+        ${step.itemFields.map(f=>renderField(f, getVal)).join("")}
+      </div>
+    </div>`;
+}
+function renderRepeaterStep(step){
+  const list = state[step.repeaterKey];
+  const cards = list.map((it,i)=>repeaterCard(step,it,i)).join("");
+  return `<h2 class="step-title">${esc(step.title)}</h2>
+    <p class="step-subtitle">${esc(step.subtitle)}</p>
+    <div class="repeat-list" id="repeatList">
+      ${cards || `<div class="empty-hint">Aucun élément ajouté pour le moment.</div>`}
+    </div>
+    <button type="button" id="btnAddItem" class="btn-add"><span class="plus">+</span> Ajouter ${step.itemLabel==="Société"?"une société":"un élément"}</button>`;
+}
+
+/* -------- Etape "financier" (supports fixes + comptes courants répétables) -------- */
+const EPARGNE_COURT_TERME = [
+  {key:"livretA", label:"Livret A"}, {key:"ldds", label:"LDDS"}, {key:"lep", label:"LEP"}, {key:"cat", label:"Compte à terme"},
+];
+const EPARGNE_LONG_TERME = [
+  {key:"assuranceVie", label:"Assurance-vie"}, {key:"pea", label:"PEA"}, {key:"compteTitres", label:"Compte-titres"},
+  {key:"per", label:"PER"}, {key:"epargneSalariale", label:"Épargne salariale"},
+];
+const COMPTE_COURANT_CONFIG = {
+  repeaterKey:"comptesCourants", itemLabel:"Compte courant",
+  itemFields:[
+    {key:"banque", label:"Banque", type:"select", options:BANKS},
+    {key:"proprietaire", label:"Titulaire", type:"select", condition:s=>s.hasPersonneB, options:proprietaireOptions, highlight:true},
+    {key:"typeCompte", label:"Type de compte", type:"select", options:[
+      {v:"personnel", l:"Personnel"}, {v:"joint", l:"Joint / commun"},
+    ]},
+    {key:"valeur", label:"Solde actuel (€)", type:"number", min:0},
+  ]
+};
+function epargneRow(s){
+  const val = state.epargne[s.key];
+  const ownerField = state.hasPersonneB ? `
+    <div class="field field-highlight">
+      <label for="f_epo_${s.key}">${s.label} — titulaire</label>
+      <select id="f_epo_${s.key}" data-epargne-owner="${s.key}">
+        <option value="" ${!val.proprietaire?'selected':''} disabled>Sélectionner...</option>
+        ${proprietaireOptions().map(o=>`<option value="${o.v}" ${val.proprietaire===o.v?'selected':''}>${esc(o.l)}</option>`).join("")}
+      </select>
+    </div>` : "";
+  return `
+    <div class="field">
+      <label for="f_epb_${s.key}">${s.label} — banque</label>
+      <select id="f_epb_${s.key}" data-epargne-bank="${s.key}">
+        <option value="" ${!val.banque?'selected':''} disabled>Sélectionner...</option>
+        ${BANKS.map(o=>`<option value="${o.v}" ${val.banque===o.v?'selected':''}>${esc(o.l)}</option>`).join("")}
+      </select>
+    </div>
+    <div class="field">
+      <label for="f_epv_${s.key}">${s.label} — valeur actuelle (€)</label>
+      <input type="number" min="0" id="f_epv_${s.key}" data-epargne-value="${s.key}" value="${esc(val.valeur)}" placeholder="0">
+    </div>
+    ${ownerField}`;
+}
+function renderFinancierStep(step){
+  const comptesCards = state.comptesCourants.map((it,i)=>repeaterCard(COMPTE_COURANT_CONFIG, it, i)).join("");
+  const gridClass = "field-grid" + (state.hasPersonneB ? " cols-3" : "");
+  return `<h2 class="step-title">${esc(step.title)}</h2>
+    <p class="step-subtitle">${esc(step.subtitle)}</p>
+
+    <div class="step-group-title">Comptes courants</div>
+    <div class="repeat-list" id="comptesCourantsList">
+      ${comptesCards || `<div class="empty-hint">Aucun compte courant ajouté pour le moment.</div>`}
+    </div>
+    <button type="button" id="btnAddCompte" class="btn-add"><span class="plus">+</span> Ajouter un compte courant</button>
+
+    <div class="step-group-title">Épargne court terme</div>
+    <div class="${gridClass}">${EPARGNE_COURT_TERME.map(epargneRow).join("")}</div>
+    <div class="step-group-title">Épargne long terme</div>
+    <div class="${gridClass}">${EPARGNE_LONG_TERME.map(epargneRow).join("")}</div>`;
+}
+
+function renderStep(){
+  const step = STEPS[currentStep];
+  let html;
+  if(step.repeaterKey) html = renderRepeaterStep(step);
+  else if(step.financier) html = renderFinancierStep(step);
+  else html = renderStandardStep(step);
+
+  els.stepContainer.innerHTML = html;
+  bindStepEvents(step);
+  buildProgress();
+
+  els.btnPrev.style.visibility = currentStep===0 ? "hidden" : "visible";
+  els.btnNext.textContent = currentStep===STEPS.length-1 ? "Terminer mon analyse →" : "Suivant →";
+  els.stepError.textContent = "";
+  window.scrollTo({top: els.wizard.offsetTop - 20, behavior:"smooth"});
+}
+
+function bindStepEvents(step){
+  // champs standards (id direct sur state, ou pb_xxx -> state.personneB) et supports financiers (state.epargne)
+  // — on exclut les champs situés dans un bloc répétable, gérés séparément plus bas.
+  Array.from(els.stepContainer.querySelectorAll("[data-name]")).filter(el=>!el.closest(".repeat-card")).forEach(input=>{
+    if(input.type==="checkbox"){
+      input.addEventListener("change", ()=>{
+        const name = input.getAttribute("data-name");
+        const wrap = input.closest("[data-field]");
+        const checked = Array.from(wrap.querySelectorAll('input[type=checkbox]:checked')).map(x=>x.value);
+        setFieldValue(name, checked);
+        saveState();
+      });
+    } else {
+      const handler = ()=>{
+        const name = input.getAttribute("data-name");
+        setFieldValue(name, input.value);
+        saveState();
+        if(name==="situationFamiliale") renderStep();
+      };
+      input.addEventListener("input", handler);
+      if(input.tagName==="SELECT") input.addEventListener("change", handler);
+    }
+  });
+  const btnAddPB = document.getElementById("btnAddPersonneB");
+  if(btnAddPB) btnAddPB.addEventListener("click", ()=>{ state.hasPersonneB = true; saveState(); renderStep(); });
+  const btnRemovePB = document.getElementById("btnRemovePersonneB");
+  if(btnRemovePB) btnRemovePB.addEventListener("click", ()=>{ state.hasPersonneB = false; saveState(); renderStep(); });
+  els.stepContainer.querySelectorAll("[data-epargne-bank]").forEach(input=>{
+    input.addEventListener("change", ()=>{
+      state.epargne[input.getAttribute("data-epargne-bank")].banque = input.value;
+      saveState();
+    });
+  });
+  els.stepContainer.querySelectorAll("[data-epargne-value]").forEach(input=>{
+    input.addEventListener("input", ()=>{
+      state.epargne[input.getAttribute("data-epargne-value")].valeur = input.value;
+      saveState();
+    });
+  });
+  els.stepContainer.querySelectorAll("[data-epargne-owner]").forEach(input=>{
+    input.addEventListener("change", ()=>{
+      state.epargne[input.getAttribute("data-epargne-owner")].proprietaire = input.value;
+      saveState();
+    });
+  });
+
+  // répétable "comptes courants" (présent uniquement sur l'étape financier)
+  const btnAddCompte = document.getElementById("btnAddCompte");
+  if(btnAddCompte) btnAddCompte.addEventListener("click", ()=>addRepeaterItem(COMPTE_COURANT_CONFIG));
+  if(step.financier) bindRepeaterCards(COMPTE_COURANT_CONFIG);
+
+  // répétables génériques
+  const btnAdd = document.getElementById("btnAddItem");
+  if(btnAdd) btnAdd.addEventListener("click", ()=>addRepeaterItem(step));
+  els.stepContainer.querySelectorAll("[data-remove]").forEach(b=>{
+    b.addEventListener("click", ()=>{
+      const config = step.repeaterKey ? step : COMPTE_COURANT_CONFIG;
+      removeRepeaterItem(config, b.getAttribute("data-remove"));
+    });
+  });
+  if(step.repeaterKey) bindRepeaterCards(step);
+}
+
+function bindRepeaterCards(config){
+  els.stepContainer.querySelectorAll(`[data-item-id]`).forEach(card=>{
+    const itemId = card.getAttribute("data-item-id");
+    const item = state[config.repeaterKey].find(i=>i.id===itemId);
+    if(!item) return;
+    card.querySelectorAll("input,select").forEach(input=>{
+      const key = input.getAttribute("data-name");
+      if(!key) return;
+      const handler = ()=>{ item[key]=input.value; saveState(); if(key==="type") renderStep(); };
+      input.addEventListener("input", handler);
+      if(input.tagName==="SELECT") input.addEventListener("change", handler);
+    });
+  });
+}
+
+function addRepeaterItem(step){
+  idSeq[step.repeaterKey] = (idSeq[step.repeaterKey]||0) + 1;
+  const prefixMap = {credits:"c", biensImmo:"b", actifsPro:"a", comptesCourants:"cc"};
+  const prefix = prefixMap[step.repeaterKey] || "x";
+  const item = {id: prefix+idSeq[step.repeaterKey]};
+  step.itemFields.forEach(f=> item[f.key]="");
+  state[step.repeaterKey].push(item);
+  saveState();
+  renderStep();
+}
+function removeRepeaterItem(step, id){
+  state[step.repeaterKey] = state[step.repeaterKey].filter(i=>i.id!==id);
+  saveState();
+  renderStep();
+}
+
+/* ==========================================================================
+   4. NAVIGATION / VALIDATION
+   ========================================================================== */
+function validateCurrentStep(){
+  const step = STEPS[currentStep];
+  let fieldsToCheck = step.fields || (step.groups ? step.groups.flatMap(g=>g.fields) : []);
+  if(step.id==="etat-civil") fieldsToCheck = fieldsToCheck.concat(PERSONNE_B_IDENTITY_FIELDS);
+  if(step.id==="revenus-charges") fieldsToCheck = fieldsToCheck.concat(PERSONNE_B_REVENUS_GROUPS.flatMap(g=>g.fields));
+  for(const f of fieldsToCheck){
+    if(f.condition && !f.condition(state)) continue;
+    if(!f.required) continue;
+    const v = getFieldValue(f.id);
+    if(f.type==="checkbox-group"){
+      if(!Array.isArray(v) || v.length===0) return `Merci de sélectionner au moins une option pour « ${f.label} ».`;
+    } else if(v===undefined || v===null || String(v).trim()===""){
+      return `Merci de renseigner « ${f.label} ».`;
+    }
+  }
+  if(step.id==="etat-civil" && state.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(state.email)){
+    return "Merci de renseigner une adresse e-mail valide.";
+  }
+  return null;
+}
+
+els.btnNext.addEventListener("click", ()=>{
+  const err = validateCurrentStep();
+  if(err){ els.stepError.textContent = err; return; }
+  els.stepError.textContent = "";
+  if(currentStep < STEPS.length-1){
+    currentStep++;
+    saveState();
+    renderStep();
+  } else {
+    finishWizard();
+  }
+});
+els.btnPrev.addEventListener("click", ()=>{
+  if(currentStep>0){ currentStep--; saveState(); renderStep(); }
+});
+
+function startWizard(){
+  els.intro.hidden = true;
+  els.wizard.hidden = false;
+  renderStep();
+}
+els.btnStart.addEventListener("click", ()=>{ currentStep = 0; startWizard(); });
+
+/* ==========================================================================
+   6. ECRAN DE FIN + EXPORT PDF + ENVOI DU DOSSIER AU CABINET
+   ========================================================================== */
+function buildClientRecapText(){
+  const s = state;
+  const date = new Date().toLocaleDateString("fr-FR",{day:"2-digit",month:"long",year:"numeric",hour:"2-digit",minute:"2-digit"});
+  const ownerLabel = (v)=> v ? (labelOf(proprietaireOptions(), v) || "") : "";
+  const ownerSuffix = (v)=> ownerLabel(v) ? ` [${ownerLabel(v)}]` : "";
+  const row = (label, value) => `${label} : ${(value===0?"0":value) || "—"}`;
+  const lines = [];
+
+  lines.push("DOSSIER D'ANALYSE PATRIMONIALE — LIONCREST CAPITAL");
+  lines.push("Reçu le " + date);
+  lines.push("");
+
+  lines.push("== ÉTAT CIVIL — PERSONNE A ==");
+  lines.push(row("Nom", s.nom));
+  lines.push(row("Prénom", s.prenom));
+  lines.push(row("Date de naissance", s.dateNaissance));
+  lines.push(row("Lieu de naissance", s.lieuNaissance));
+  lines.push(row("Nationalité", s.nationalite));
+  lines.push(row("Profession", s.profession));
+  lines.push(row("Employeur", s.employeur));
+  lines.push(row("Ancienneté", s.anciennete));
+  lines.push(row("Type de contrat", labelOf(TYPE_CONTRAT_OPTIONS, s.typeContrat)));
+  lines.push(row("Régime de retraite", s.regimeRetraite));
+  lines.push(row("Adresse", s.adresse));
+  lines.push(row("Téléphone", s.telephone));
+  lines.push(row("E-mail", s.email));
+  lines.push(row("Situation familiale", labelOf(SITUATION_OPTIONS, s.situationFamiliale)));
+  if(s.situationFamiliale === "marie"){
+    lines.push(row("Régime matrimonial", labelOf(REGIME_OPTIONS, s.regimeMatrimonial)));
+  }
+  lines.push("");
+
+  if(s.hasPersonneB){
+    const b = s.personneB;
+    lines.push("== ÉTAT CIVIL — PERSONNE B ==");
+    lines.push(row("Nom", b.nom));
+    lines.push(row("Prénom", b.prenom));
+    lines.push(row("Date de naissance", b.dateNaissance));
+    lines.push(row("Lieu de naissance", b.lieuNaissance));
+    lines.push(row("Nationalité", b.nationalite));
+    lines.push(row("Profession", b.profession));
+    lines.push(row("Employeur", b.employeur));
+    lines.push(row("Ancienneté", b.anciennete));
+    lines.push(row("Type de contrat", labelOf(TYPE_CONTRAT_OPTIONS, b.typeContrat)));
+    lines.push(row("Régime de retraite", b.regimeRetraite));
+    lines.push(row("Téléphone", b.telephone));
+    lines.push(row("E-mail", b.email));
+    lines.push("");
+  }
+
+  lines.push("== REVENUS ET CHARGES ANNUELS — PERSONNE A ==");
+  lines.push(row("Revenus salariés", eur(num(s.revenuSalaries))));
+  lines.push(row("Dividendes", eur(num(s.dividendes))));
+  lines.push(row("Revenus fonciers", eur(num(s.revenusFonciers))));
+  lines.push(row("BIC / BNC", eur(num(s.bicBnc))));
+  lines.push(row("Autres revenus", eur(num(s.autresRevenus))));
+  lines.push(row("Charges — crédits", eur(num(s.chargesCredits))));
+  lines.push(row("Charges — impôts", eur(num(s.chargesImpots))));
+  lines.push(row("Charges — IFI", eur(num(s.chargesIfi))));
+  lines.push(row("Charges — copropriété", eur(num(s.chargesCopro))));
+  lines.push(row("Train de vie annuel", eur(num(s.trainDeVie))));
+  lines.push("");
+
+  if(s.hasPersonneB){
+    const b = s.personneB;
+    lines.push("== REVENUS ET CHARGES ANNUELS — PERSONNE B ==");
+    lines.push(row("Revenus salariés", eur(num(b.revenuSalaries))));
+    lines.push(row("Dividendes", eur(num(b.dividendes))));
+    lines.push(row("Revenus fonciers", eur(num(b.revenusFonciers))));
+    lines.push(row("BIC / BNC", eur(num(b.bicBnc))));
+    lines.push(row("Autres revenus", eur(num(b.autresRevenus))));
+    lines.push(row("Charges — crédits", eur(num(b.chargesCredits))));
+    lines.push(row("Charges — impôts", eur(num(b.chargesImpots))));
+    lines.push(row("Charges — IFI", eur(num(b.chargesIfi))));
+    lines.push(row("Charges — copropriété", eur(num(b.chargesCopro))));
+    lines.push(row("Train de vie annuel", eur(num(b.trainDeVie))));
+    lines.push("");
+  }
+
+  lines.push("== CRÉDITS EN COURS ==");
+  if(s.credits.length){
+    s.credits.forEach((c,i)=>{
+      lines.push(`  ${i+1}. ${labelOf(STEPS[2].itemFields[0].options,c.type)||"Crédit"} — ${labelOf(BANKS,c.banque)||"banque non renseignée"}`);
+      lines.push(`     Mensualité : ${eur(num(c.mensualite))} · Capital restant dû : ${eur(num(c.capitalRestant))} · Fin : ${c.dateFin||"—"}`);
+    });
+  } else lines.push("  Aucun crédit renseigné");
+  lines.push("");
+
+  lines.push("== PATRIMOINE IMMOBILIER ==");
+  if(s.biensImmo.length){
+    s.biensImmo.forEach((b,i)=>{
+      lines.push(`  ${i+1}. ${labelOf(STEPS[3].itemFields[0].options,b.type)||"Bien"}${b.adresse?" — "+b.adresse:""}${ownerSuffix(b.proprietaire)}`);
+      lines.push(`     Valeur : ${eur(num(b.valeur))} · Capital restant dû : ${eur(num(b.capitalRestant))} · Revenus locatifs : ${eur(num(b.revenusLocatifs))} · DPE : ${(b.dpe||"—").toUpperCase()}`);
+    });
+  } else lines.push("  Aucun bien renseigné");
+  lines.push("");
+
+  lines.push("== COMPTES COURANTS ==");
+  if(s.comptesCourants.length){
+    s.comptesCourants.forEach((c,i)=>{
+      lines.push(`  ${i+1}. Compte ${labelOf(COMPTE_COURANT_CONFIG.itemFields[2].options,c.typeCompte)||"courant"} — ${labelOf(BANKS,c.banque)||"banque non renseignée"}${ownerSuffix(c.proprietaire)} : ${eur(num(c.valeur))}`);
+    });
+  } else lines.push("  Aucun compte courant renseigné");
+  lines.push("");
+
+  lines.push("== PATRIMOINE FINANCIER (épargne) ==");
+  const epargneItems = [...EPARGNE_COURT_TERME, ...EPARGNE_LONG_TERME];
+  const epargneRenseignee = epargneItems.filter(x=>num(s.epargne[x.key].valeur)>0);
+  if(epargneRenseignee.length){
+    epargneRenseignee.forEach(x=>{
+      const v = s.epargne[x.key];
+      lines.push(`  ${x.label} — ${labelOf(BANKS,v.banque)||"banque non renseignée"}${ownerSuffix(v.proprietaire)} : ${eur(num(v.valeur))}`);
+    });
+  } else lines.push("  Aucun support renseigné");
+  lines.push("");
+
+  lines.push("== ACTIFS PROFESSIONNELS ==");
+  if(s.actifsPro.length){
+    const FORMES = [{v:"sas",l:"SAS / SASU"},{v:"sarl",l:"SARL / EURL"},{v:"sci",l:"SCI"},{v:"sa",l:"SA"},{v:"autre",l:"Autre"}];
+    s.actifsPro.forEach((a,i)=>{
+      lines.push(`  ${i+1}. ${a.societe||"Société"} (${labelOf(FORMES,a.formeJuridique)||a.formeJuridique||"forme non renseignée"}) — ${a.pourcentageDetention||0}% détenu`);
+      lines.push(`     Valeur estimée : ${eur(num(a.valeurEstimee))} · CA : ${eur(num(a.chiffreAffaires))} · Trésorerie : ${eur(num(a.tresorerie))} · Projet de cession : ${a.projetCession||"—"}`);
+    });
+  } else lines.push("  Aucun actif professionnel renseigné");
+  lines.push("");
+
+  lines.push("== PRÉVOYANCE ET PROTECTION ==");
+  lines.push(row("Contrats de prévoyance", (s.prevoyanceContrats||[]).map(v=>labelOf(STEPS[6].fields[0].options,v)).join(", ")));
+  lines.push(row("Documents juridiques existants", (s.prevoyanceDocuments||[]).map(v=>labelOf(STEPS[6].fields[1].options,v)).join(", ")));
+  lines.push("");
+
+  lines.push("== OBJECTIFS PATRIMONIAUX ==");
+  lines.push("  " + ((s.objectifs||[]).map(v=>labelOf(STEPS[7].fields[0].options,v)).join(", ") || "—"));
+  lines.push("");
+
+  lines.push("== PROFIL INVESTISSEUR ==");
+  lines.push(row("Appétence au risque", labelOf(STEPS[8].fields[0].options, s.appetence)));
+  lines.push(row("Horizon de placement", labelOf(STEPS[8].fields[1].options, s.horizon)));
+  lines.push(row("Expérience", labelOf(STEPS[8].fields[2].options, s.experience)));
+
+  return lines.join("\n");
+}
+
+function sendClientRecapEmail(){
+  if(!window.LioncrestMail){
+    console.error("Envoi impossible : le service d'e-mail n'est pas chargé.");
+    return;
+  }
+  const s = state;
+  const clientNom = `${s.prenom||""} ${s.nom||""}`.trim() || "Client sans nom renseigné";
+  window.LioncrestMail.send({
+    subject: "Nouvelle analyse patrimoniale — " + clientNom,
+    from_name: clientNom,
+    reply_to: s.email || "",
+    message: buildClientRecapText(),
+  }).catch(function(err){
+    console.error("Erreur lors de l'envoi du dossier au cabinet :", err);
+  });
+}
+
+function finishWizard(){
+  saveState();
+  sendClientRecapEmail();
+  els.wizard.hidden = true;
+  els.finalScreen.hidden = false;
+  window.scrollTo({top:0, behavior:"smooth"});
+  clearSavedState();
+}
+
+document.getElementById("btnDownloadPdf").addEventListener("click", exportPdf);
+
+function pr(label, value){
+  return `<div class="pr-row"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`;
+}
+
+function exportPdf(){
+  const date = new Date().toLocaleDateString("fr-FR",{day:"2-digit",month:"long",year:"numeric"});
+  const s = state;
+
+  const ownerLabel = (v)=> v ? (labelOf(proprietaireOptions(), v) || "") : "";
+  const ownerSuffix = (v)=> ownerLabel(v) ? ` [${ownerLabel(v)}]` : "";
+
+  const creditsHtml = s.credits.length ? s.credits.map(c=>`
+    <div class="pr-row"><span>${esc(labelOf(STEPS[2].itemFields[0].options,c.type)||"Crédit")} — ${esc(labelOf(BANKS,c.banque)||"")}</span><strong>${eur(num(c.capitalRestant))} restant (${eur(num(c.mensualite))}/mois)</strong></div>
+  `).join("") : `<div class="pr-row"><span>Aucun crédit renseigné</span><strong>—</strong></div>`;
+
+  const biensHtml = s.biensImmo.length ? s.biensImmo.map(b=>`
+    <div class="pr-row"><span>${esc(labelOf(STEPS[3].itemFields[0].options,b.type)||"Bien")} ${b.adresse?"— "+esc(b.adresse):""}${esc(ownerSuffix(b.proprietaire))}</span><strong>${eur(num(b.valeur))}</strong></div>
+  `).join("") : `<div class="pr-row"><span>Aucun bien renseigné</span><strong>—</strong></div>`;
+
+  const comptesHtml = s.comptesCourants.length ? s.comptesCourants.map(c=>`
+    <div class="pr-row"><span>Compte ${esc(labelOf(COMPTE_COURANT_CONFIG.itemFields[2].options,c.typeCompte)||"courant")} — ${esc(labelOf(BANKS,c.banque)||"banque non renseignée")}${esc(ownerSuffix(c.proprietaire))}</span><strong>${eur(num(c.valeur))}</strong></div>
+  `).join("") : `<div class="pr-row"><span>Aucun compte courant renseigné</span><strong>—</strong></div>`;
+
+  const epargneRows = [...EPARGNE_COURT_TERME, ...EPARGNE_LONG_TERME]
+    .filter(x=>num(s.epargne[x.key].valeur)>0)
+    .map(x=>pr(`${x.label} — ${labelOf(BANKS,s.epargne[x.key].banque)||"banque non renseignée"}${ownerSuffix(s.epargne[x.key].proprietaire)}`, eur(num(s.epargne[x.key].valeur))))
+    .join("") || pr("Aucun support renseigné","—");
+
+  const actifsHtml = s.actifsPro.length ? s.actifsPro.map(a=>`
+    <div class="pr-row"><span>${esc(a.societe||"Société")} (${esc(a.pourcentageDetention||0)}%)</span><strong>${eur(num(a.valeurEstimee))}</strong></div>
+  `).join("") : `<div class="pr-row"><span>Aucun actif professionnel renseigné</span><strong>—</strong></div>`;
+
+  const objectifsLabels = (s.objectifs||[]).map(v=>labelOf(STEPS[7].fields[0].options,v)).join(", ") || "—";
+  const contratsPrevoyanceLabels = (s.prevoyanceContrats||[]).map(v=>labelOf(STEPS[6].fields[0].options,v)).join(", ") || "Aucun";
+  const documentsJuridiquesLabels = (s.prevoyanceDocuments||[]).map(v=>labelOf(STEPS[6].fields[1].options,v)).join(", ") || "Aucun";
+
+  const personneBSection = s.hasPersonneB ? `
+    <div class="pr-section">
+      <h2>Seconde personne</h2>
+      ${pr("Nom", (s.personneB.prenom||"")+" "+(s.personneB.nom||""))}
+      ${pr("Profession", s.personneB.profession)}
+      ${pr("E-mail", s.personneB.email)}
+      ${pr("Téléphone", s.personneB.telephone)}
+      ${pr("Total revenus", eur(num(s.personneB.revenuSalaries)+num(s.personneB.dividendes)+num(s.personneB.revenusFonciers)+num(s.personneB.bicBnc)+num(s.personneB.autresRevenus)))}
+      ${pr("Total charges", eur(num(s.personneB.chargesCredits)+num(s.personneB.chargesImpots)+num(s.personneB.chargesIfi)+num(s.personneB.chargesCopro)+num(s.personneB.trainDeVie)))}
+    </div>` : "";
+
+  document.getElementById("printReport").innerHTML = `
+    <div class="pr-header">
+      <div><h1>Lioncrest Capital</h1><span>Dossier d'analyse patrimoniale</span></div>
+      <div style="text-align:right;">
+        <div style="font-size:.78rem;">${esc(s.prenom)} ${esc(s.nom)}${s.hasPersonneB?" &amp; "+esc(s.personneB.prenom)+" "+esc(s.personneB.nom):""}</div>
+        <div style="font-size:.7rem;color:#8A93A0;">${date}</div>
+      </div>
+    </div>
+
+    <div class="pr-section">
+      <h2>État civil</h2>
+      ${pr("Situation familiale", labelOf(SITUATION_OPTIONS, s.situationFamiliale))}
+      ${pr("Profession", s.profession)}
+      ${pr("E-mail", s.email)}
+      ${pr("Téléphone", s.telephone)}
+    </div>
+
+    <div class="pr-section">
+      <h2>Revenus et charges (annuels)</h2>
+      ${pr("Total revenus", eur(num(s.revenuSalaries)+num(s.dividendes)+num(s.revenusFonciers)+num(s.bicBnc)+num(s.autresRevenus)))}
+      ${pr("Total charges", eur(num(s.chargesCredits)+num(s.chargesImpots)+num(s.chargesIfi)+num(s.chargesCopro)+num(s.trainDeVie)))}
+    </div>
+
+    ${personneBSection}
+
+    <div class="pr-section"><h2>Crédits en cours</h2>${creditsHtml}</div>
+    <div class="pr-section"><h2>Patrimoine immobilier</h2>${biensHtml}</div>
+    <div class="pr-section"><h2>Comptes courants</h2>${comptesHtml}</div>
+    <div class="pr-section"><h2>Patrimoine financier</h2>${epargneRows}</div>
+    <div class="pr-section"><h2>Actifs professionnels</h2>${actifsHtml}</div>
+    <div class="pr-section">
+      <h2>Prévoyance et protection</h2>
+      ${pr("Contrats de prévoyance", contratsPrevoyanceLabels)}
+      ${pr("Documents juridiques existants", documentsJuridiquesLabels)}
+    </div>
+    <div class="pr-section"><h2>Objectifs patrimoniaux</h2><div class="pr-row"><span>${esc(objectifsLabels)}</span></div></div>
+    <div class="pr-section">
+      <h2>Profil investisseur</h2>
+      ${pr("Appétence au risque", s.appetence)}
+      ${pr("Horizon de placement", s.horizon)}
+      ${pr("Expérience", s.experience)}
+    </div>
+
+    <div class="pr-footer">
+      Lioncrest Capital — anthony.felix@lioncrestcapital.com<br>
+      Document confidentiel établi à partir des informations déclarées par le client. Il ne constitue pas un conseil personnalisé au sens réglementaire.
+    </div>
+  `;
+  generatePdfFile();
+}
+
+function generatePdfFile(){
+  const btn = document.getElementById("btnDownloadPdf");
+  const originalLabel = btn.textContent;
+  const reportEl = document.getElementById("printReport");
+
+  if(typeof html2canvas === "undefined" || !window.jspdf){
+    console.error("html2canvas ou jsPDF non chargés — impossible de générer le PDF.");
+    btn.textContent = "PDF indisponible — réessayez";
+    setTimeout(()=>{ btn.textContent = originalLabel; }, 2500);
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "Génération du PDF...";
+
+  html2canvas(reportEl, {
+    scale:2,
+    backgroundColor:"#ffffff",
+    windowWidth: reportEl.scrollWidth,
+    useCORS:true,
+  }).then(function(canvas){
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({unit:"pt", format:"a4"});
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const imgWidth = pageWidth;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    const imgData = canvas.toDataURL("image/jpeg", 0.95);
+
+    let heightLeft = imgHeight;
+    let position = 0;
+    pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
+    heightLeft -= pageHeight;
+    while(heightLeft > 0){
+      position = heightLeft - imgHeight;
+      pdf.addPage();
+      pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+    }
+
+    const filename = "dossier-patrimonial-" + (state.nom || "lioncrest").toLowerCase().replace(/[^a-z0-9]+/g,"-") + ".pdf";
+    pdf.save(filename);
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }).catch(function(err){
+    console.error("Erreur de génération du PDF :", err);
+    btn.disabled = false;
+    btn.textContent = "Échec — réessayer";
+    setTimeout(()=>{ btn.textContent = originalLabel; }, 2500);
+  });
+}
+
+})();
