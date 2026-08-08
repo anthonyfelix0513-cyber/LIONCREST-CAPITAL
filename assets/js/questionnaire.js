@@ -664,6 +664,17 @@ els.btnStart.addEventListener("click", ()=>{ currentStep = 0; startWizard(); });
 /* ==========================================================================
    6. ECRAN DE FIN + EXPORT PDF + ENVOI DU DOSSIER AU CABINET
    ========================================================================== */
+function calculerAge(dateStr){
+  if(!dateStr) return null;
+  const d = new Date(dateStr);
+  if(isNaN(d.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - d.getFullYear();
+  const m = today.getMonth() - d.getMonth();
+  if(m < 0 || (m===0 && today.getDate() < d.getDate())) age--;
+  return age;
+}
+
 function buildClientRecapText(){
   const s = state;
   const date = new Date().toLocaleDateString("fr-FR",{day:"2-digit",month:"long",year:"numeric",hour:"2-digit",minute:"2-digit"});
@@ -672,8 +683,42 @@ function buildClientRecapText(){
   const row = (label, value) => `${label} : ${(value===0?"0":value) || "—"}`;
   const lines = [];
 
+  // --- Synthèse chiffrée (calculs pour orienter le diagnostic) ---
+  const ageA = calculerAge(s.dateNaissance);
+  const ageB = s.hasPersonneB ? calculerAge(s.personneB.dateNaissance) : null;
+
+  const patrimoineImmo = s.biensImmo.reduce((sum,b)=>sum+num(b.valeur),0);
+  const patrimoineComptes = s.comptesCourants.reduce((sum,c)=>sum+num(c.valeur),0);
+  const patrimoineEpargne = [...EPARGNE_COURT_TERME, ...EPARGNE_LONG_TERME].reduce((sum,x)=>sum+num(s.epargne[x.key].valeur),0);
+  const patrimoinePro = s.actifsPro.reduce((sum,a)=>sum+num(a.valeurEstimee),0);
+  const patrimoineBrut = patrimoineImmo + patrimoineComptes + patrimoineEpargne + patrimoinePro;
+
+  const dettesCredits = s.credits.reduce((sum,c)=>sum+num(c.capitalRestant),0);
+  const dettesImmo = s.biensImmo.reduce((sum,b)=>sum+num(b.capitalRestant),0);
+  const dettesTotales = dettesCredits + dettesImmo;
+  const patrimoineNet = patrimoineBrut - dettesTotales;
+
+  const revenusA = num(s.revenuSalaries)+num(s.dividendes)+num(s.revenusFonciers)+num(s.bicBnc)+num(s.autresRevenus);
+  const chargesA = num(s.chargesCredits)+num(s.chargesImpots)+num(s.chargesIfi)+num(s.chargesCopro)+num(s.trainDeVie);
+  const revenusB = s.hasPersonneB ? num(s.personneB.revenuSalaries)+num(s.personneB.dividendes)+num(s.personneB.revenusFonciers)+num(s.personneB.bicBnc)+num(s.personneB.autresRevenus) : 0;
+  const chargesB = s.hasPersonneB ? num(s.personneB.chargesCredits)+num(s.personneB.chargesImpots)+num(s.personneB.chargesIfi)+num(s.personneB.chargesCopro)+num(s.personneB.trainDeVie) : 0;
+  const revenusTotaux = revenusA + revenusB;
+  const chargesTotales = chargesA + chargesB;
+  const capaciteEpargne = revenusTotaux - chargesTotales;
+
   lines.push("DOSSIER D'ANALYSE PATRIMONIALE — LIONCREST CAPITAL");
   lines.push("Reçu le " + date);
+  lines.push("");
+
+  lines.push("== SYNTHÈSE CHIFFRÉE ==");
+  lines.push(row("Âge — Personne A", ageA!==null ? ageA+" ans" : ""));
+  if(s.hasPersonneB) lines.push(row("Âge — Personne B", ageB!==null ? ageB+" ans" : ""));
+  lines.push(row("Patrimoine brut (immobilier + comptes + épargne + pro)", eur(patrimoineBrut)));
+  lines.push(row("Dettes totales (crédits + capital restant dû immobilier)", eur(dettesTotales)));
+  lines.push(row("Patrimoine net", eur(patrimoineNet)));
+  lines.push(row("Revenus annuels totaux du foyer", eur(revenusTotaux)));
+  lines.push(row("Charges annuelles totales du foyer", eur(chargesTotales)));
+  lines.push(row("Capacité d'épargne annuelle estimée", eur(capaciteEpargne)));
   lines.push("");
 
   lines.push("== ÉTAT CIVIL — PERSONNE A ==");
