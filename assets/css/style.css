@@ -159,7 +159,7 @@ input,select,textarea{font-family:inherit;font-size:1rem;}
 
 .nav-links{display:flex;align-items:center;gap:42px;}
 .nav-links a{
-  font-size:.82rem;font-weight:400;letter-spacing:.02em;
+  font-size:.98rem;font-weight:400;letter-spacing:.02em;
   color:var(--gold-300,#E4C875);position:relative;padding:4px 0;
   transition:color .4s var(--ease);
 }
@@ -368,13 +368,6 @@ section{padding:130px 0;}
 }
 .duotone-photo img{
   width:100%;height:100%;object-fit:cover;object-position:top center;display:block;
-  filter:grayscale(1) sepia(.3) contrast(1.08) brightness(1.05);
-}
-.duotone-photo::after{
-  content:"";position:absolute;inset:0;
-  background:linear-gradient(200deg, var(--gold-500) 0%, var(--emerald-700) 62%, var(--emerald-900) 100%);
-  mix-blend-mode:multiply;
-  opacity:.82;
 }
 .duotone-photo::before{
   content:"";position:absolute;inset:0;z-index:2;pointer-events:none;
