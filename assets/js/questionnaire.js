@@ -839,7 +839,7 @@ function pr(label, value){
   return `<div class="pr-row"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`;
 }
 
-function exportPdf(){
+function renderPrintReportIntoDom(){
   const date = new Date().toLocaleDateString("fr-FR",{day:"2-digit",month:"long",year:"numeric"});
   const s = state;
 
@@ -930,26 +930,25 @@ function exportPdf(){
       Document confidentiel établi à partir des informations déclarées par le client. Il ne constitue pas un conseil personnalisé au sens réglementaire.
     </div>
   `;
-  generatePdfFile();
 }
 
-function generatePdfFile(){
-  const btn = document.getElementById("btnDownloadPdf");
-  const originalLabel = btn.textContent;
+function dossierFilename(){
+  return "dossier-patrimonial-" + (state.nom || "lioncrest").toLowerCase().replace(/[^a-z0-9]+/g,"-") + ".pdf";
+}
+
+/* Rend #printReport en PDF et résout avec l'instance jsPDF (ne télécharge rien, ne touche pas l'UI) */
+function renderReportPdf(opts){
+  opts = opts || {};
+  const scale = opts.scale || 2;
+  const quality = opts.quality!==undefined ? opts.quality : 0.95;
   const reportEl = document.getElementById("printReport");
 
   if(typeof html2canvas === "undefined" || !window.jspdf){
-    console.error("html2canvas ou jsPDF non chargés — impossible de générer le PDF.");
-    btn.textContent = "PDF indisponible — réessayez";
-    setTimeout(()=>{ btn.textContent = originalLabel; }, 2500);
-    return;
+    return Promise.reject(new Error("html2canvas ou jsPDF non chargés."));
   }
 
-  btn.disabled = true;
-  btn.textContent = "Génération du PDF...";
-
-  html2canvas(reportEl, {
-    scale:2,
+  return html2canvas(reportEl, {
+    scale: scale,
     backgroundColor:"#ffffff",
     windowWidth: reportEl.scrollWidth,
     useCORS:true,
@@ -960,7 +959,7 @@ function generatePdfFile(){
     const pageHeight = pdf.internal.pageSize.getHeight();
     const imgWidth = pageWidth;
     const imgHeight = (canvas.height * imgWidth) / canvas.width;
-    const imgData = canvas.toDataURL("image/jpeg", 0.95);
+    const imgData = canvas.toDataURL("image/jpeg", quality);
 
     let heightLeft = imgHeight;
     let position = 0;
@@ -973,8 +972,20 @@ function generatePdfFile(){
       heightLeft -= pageHeight;
     }
 
-    const filename = "dossier-patrimonial-" + (state.nom || "lioncrest").toLowerCase().replace(/[^a-z0-9]+/g,"-") + ".pdf";
-    pdf.save(filename);
+    return pdf;
+  });
+}
+
+function exportPdf(){
+  renderPrintReportIntoDom();
+
+  const btn = document.getElementById("btnDownloadPdf");
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Génération du PDF...";
+
+  renderReportPdf({scale:2, quality:0.95}).then(function(pdf){
+    pdf.save(dossierFilename());
     btn.disabled = false;
     btn.textContent = originalLabel;
   }).catch(function(err){
