@@ -114,7 +114,7 @@ input,select,textarea{font-family:inherit;font-size:1rem;}
 .btn-gold{
   background:linear-gradient(180deg, var(--emerald-800) 0%, var(--emerald-900) 100%);
   color:var(--gold-300, var(--gold-400));
-  font-weight:500;
+  font-weight:400;
   border:1px solid var(--gold-500);
   box-shadow:0 10px 26px -14px rgba(1,22,17,.6), inset 0 1px 0 rgba(201,162,39,.15);
 }
