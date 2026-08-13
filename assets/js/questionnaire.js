@@ -613,7 +613,10 @@ function renderFinancierStep(step){
     <div class="${gridClass}">${EPARGNE_LONG_TERME.map(epargneRow).join("")}</div>`;
 }
 
-function renderStep(){
+/* scrollToTop : uniquement lors d'un vrai changement d'étape (Suivant/Précédent/démarrage) —
+   pas lors d'un re-rendu réactif en place (ajout/retrait d'un élément, sélection d'une option...),
+   pour ne pas faire remonter la page en haut pendant la saisie. */
+function renderStep(scrollToTop){
   const step = STEPS[currentStep];
   let html;
   if(step.repeaterKey) html = renderRepeaterStep(step);
@@ -627,7 +630,9 @@ function renderStep(){
   els.btnPrev.style.visibility = currentStep===0 ? "hidden" : "visible";
   els.btnNext.textContent = currentStep===STEPS.length-1 ? "Terminer mon analyse →" : "Suivant →";
   els.stepError.textContent = "";
-  window.scrollTo({top: els.wizard.offsetTop - 20, behavior:"smooth"});
+  if(scrollToTop){
+    window.scrollTo({top: els.wizard.offsetTop - 20, behavior:"smooth"});
+  }
 }
 
 function bindStepEvents(step){
@@ -784,19 +789,19 @@ els.btnNext.addEventListener("click", ()=>{
   if(currentStep < STEPS.length-1){
     currentStep++;
     saveState();
-    renderStep();
+    renderStep(true);
   } else {
     finishWizard();
   }
 });
 els.btnPrev.addEventListener("click", ()=>{
-  if(currentStep>0){ currentStep--; saveState(); renderStep(); }
+  if(currentStep>0){ currentStep--; saveState(); renderStep(true); }
 });
 
 function startWizard(){
   els.intro.hidden = true;
   els.wizard.hidden = false;
-  renderStep();
+  renderStep(true);
 }
 els.btnStart.addEventListener("click", ()=>{ currentStep = 0; startWizard(); });
 
