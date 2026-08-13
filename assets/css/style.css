@@ -271,8 +271,8 @@ input,select,textarea{font-family:inherit;font-size:1rem;}
 .hero-scroll .stem{width:1px;height:34px;background:linear-gradient(var(--gold-400),transparent);}
 
 /* ---------- Sections ---------- */
-section{padding:130px 0;}
-.section-tight{padding:90px 0;}
+section{padding:90px 0;}
+.section-tight{padding:64px 0;}
 .section-head{max-width:660px;margin-bottom:64px;}
 .section-head.center{margin-left:auto;margin-right:auto;text-align:center;}
 .section-head h2{font-size:clamp(2rem,3.2vw,2.6rem);margin-top:16px;}
@@ -329,7 +329,7 @@ section{padding:130px 0;}
 .process-step p{font-size:.92rem;}
 
 /* ---------- CTA band ---------- */
-.cta-band{background:var(--emerald-900);padding:100px 0;position:relative;overflow:hidden;}
+.cta-band{background:var(--emerald-900);padding:70px 0;position:relative;overflow:hidden;}
 .cta-band::before{content:"";position:absolute;inset:0;background:radial-gradient(700px 400px at 85% 30%, rgba(201,162,39,.10), transparent 65%);}
 .cta-band-inner{position:relative;z-index:1;text-align:center;max-width:680px;margin:0 auto;}
 .cta-band h2{color:var(--white);font-size:clamp(1.8rem,3vw,2.5rem);}
